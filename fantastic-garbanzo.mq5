@@ -17,12 +17,6 @@ input int      RsiBottomLevel=20;
 input double   DailyLoss=0.5;
 input int      MaxSlippage=5;
 
-
-// init candle tracking.
-int prev_num_candles = 0;
-// init rsi tracking.
-double prev_rsi = 50;
-
 // rsi handler
 int rsi_handler;
 // rsi array
@@ -60,37 +54,25 @@ int OnInit() {
 void OnTick() {
 
    CopyBuffer(rsi_handler, 0, 1, 3, rsi);
-  
-   int num_candles = Bars(_Symbol, _Period);
-   
-   if(num_candles > prev_num_candles) {
+
+   if(rsi[0] > RsiBottomLevel && rsi[1] <= RsiBottomLevel && OrdersTotal() < 1) {
+      // TODO extract buy function
+      // TODO test and profile OrderOpen() VS Buy() for execution time.
+      // TODO does including Trade.mqh affect performance, does tree shaking exist on includes? 
+      // TODO use % SL and TP from input parameters.
+      // TODO move out as much calculations as possible from OnTick().
+      int    digits = (int) SymbolInfoInteger(_Symbol, SYMBOL_DIGITS); // amount of digits (3 as in 1.000)
+      double point = SymbolInfoDouble(_Symbol, SYMBOL_POINT);          // point value (1 as in 1.000)
+      double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);              // current price for closing long.
+      double sl = (bid - 1000 * point) / 2;                            // unnormalized stop loss value.
+      sl = NormalizeDouble(sl, digits);                                // normalizing stop loss.
+      double tp = bid + 1000 * point;                                  // unnormalized take profit value.
+      tp = NormalizeDouble(tp, digits);                                // normalizing take profit.
       
-      Print("New candle: ", num_candles);
+      double price = SymbolInfoDouble(_Symbol, SYMBOL_ASK); // For long position.
       
-      if(rsi[0] > RsiBottomLevel && prev_rsi <= RsiBottomLevel && OrdersTotal() < 1) {
-         // TODO extract buy function
-         // TODO test and profile OrderOpen() VS Buy() for execution time.
-         // TODO does including Trade.mqh affect performance, does tree shaking exist on includes? 
-         // TODO use % SL and TP from input parameters.
-         // TODO move out as much calculations as possible from OnTick().
-         int    digits = (int) SymbolInfoInteger(_Symbol, SYMBOL_DIGITS); // amount of digits (3 as in 1.000)
-         double point = SymbolInfoDouble(_Symbol, SYMBOL_POINT);          // point value (1 as in 1.000)
-         double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);              // current price for closing long.
-         double sl = bid - 1000 * point;                                  // unnormalized stop loss value.
-         sl = NormalizeDouble(sl, digits);                                // normalizing stop loss.
-         double tp = bid + 1000 * point;                                  // unnormalized take profit value.
-         tp = NormalizeDouble(tp, digits);                                // normalizing take profit.
-         
-         double price = SymbolInfoDouble(_Symbol, SYMBOL_ASK); // For long position.
-         
-         trade.Buy(Lots, _Symbol, price, sl, tp, "");
+      trade.Buy(Lots, _Symbol, price, sl, tp, "");
       }
- 
-      if(rsi[0] <= RsiBottomLevel ) {
-         prev_rsi = rsi[0];
-      }
-      prev_num_candles = num_candles;
-     }
   }
 
 void OnTimer() {
