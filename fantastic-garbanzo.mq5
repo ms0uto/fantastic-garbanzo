@@ -7,15 +7,15 @@ CTrade         trade;
 #include <Trade\AccountInfo.mqh>
 CAccountInfo   account;
 
-
-input double   StopLoss=0.1;
+input double   StopLoss=1.0;
 input double   TakeProfit=1.0;
-input double   Lots=1.0;
+input double   Lots=0.2;
 input int      RsiPeriod=14;
 input int      RsiTopLevel=80;
 input int      RsiBottomLevel=20;
-input double   DailyLoss=0.5;
+input double   DailyLoss=2.0;
 input int      MaxSlippage=10;
+input int      MaxOpenPositions=1;
 
 // rsi handler
 int rsi_handler;
@@ -29,9 +29,10 @@ int prev_num_candles = 0;
 // input datetime FinishTime=
 
 int OnInit() {
-   // TODO Refactor OnInit into smaller functions
+
    Print("Starting fantastic-garbanzo EA on server ", account.Server());
-   Print("Balance=", account.Balance()," Profit=", account.Profit()," Equity=", account.Equity());
+   Print("Balance=", account.Balance()," Profit=", account.Profit()," Equity=", account.Equity());   
+   Print("Point value=", PointValue());
    
    // Allow executing only on demo accounts for now.
    //if(account.TradeMode() == ACCOUNT_TRADE_MODE_REAL) {
@@ -60,34 +61,55 @@ void OnTick() {
    int num_candles = Bars(_Symbol, _Period);
    
    if(num_candles > prev_num_candles) {
-      if(rsi[0] > RsiBottomLevel && rsi[1] <= RsiBottomLevel && PositionsTotal() < 1) {
-         // TODO extract buy function
-         // TODO test and profile OrderOpen() VS Buy() for execution time.
-         // TODO does including Trade.mqh affect performance, does tree shaking exist on includes? 
-         // TODO use % SL and TP from input parameters.
-         // TODO move out as much calculations as possible from OnTick().
-       
+   
+      if(rsi[0] > RsiBottomLevel && rsi[1] <= RsiBottomLevel && PositionsTotal() < MaxOpenPositions) {
+   
          double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK); // For long position.
-         double sl = ask - 100 * _Point;
-         double tp = ask + 100 * _Point;
-         
+         double sl = ask - (CalculateStopLossPoints() * _Point);
+         double tp = ask + (CalculateTakeProfitPoints() * _Point);
+         Print("Ask=", ask);
          trade.Buy(Lots, _Symbol, ask, sl, tp, NULL);
-         
       }
       
-      if(rsi[0] < RsiTopLevel && rsi[1] >= RsiTopLevel && PositionsTotal() < 1) {
+      if(rsi[0] < RsiTopLevel && rsi[1] >= RsiTopLevel && PositionsTotal() < MaxOpenPositions) {
    
-         double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID); // For short position.
-         double sl = bid + 100 * _Point;
-         double tp = bid - 100 * _Point;
-         
+         double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID); // For short position.   
+         double sl = bid + CalculateStopLossPoints() * _Point;
+         double tp = bid - CalculateTakeProfitPoints() * _Point;
+         Print("Bid=", bid);
          trade.Sell(Lots, _Symbol, bid, sl, tp, NULL);
       }
       prev_num_candles = num_candles;
    }
 }
 
+double CalculateStopLossPoints() {
+   // Calculate risk from SL% in amount of base currency.
+   double riskAmount = (StopLoss/100) * account.Equity(); // TODO Test using equity vs balance.
+   // Calculate stop loss points
+   double stopLossPoints = riskAmount/(PointValue() * Lots);
+   Print("SL=", stopLossPoints);
+   return (stopLossPoints);
+}
+
+double CalculateTakeProfitPoints() {
+   // Calculate profit from TP% in amount of base currency.
+   double profitAmount = (TakeProfit/100) * account.Equity();
+   // Calculate take profit points
+   double takeProfitPoints = profitAmount/(PointValue() * Lots);
+   Print("TP=", takeProfitPoints);
+   return (takeProfitPoints);
+}
+
+// Calculate the value in base currency of 1 point move in price with 1 lot.
+double PointValue() {
+   double tickSize = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
+   double tickValue = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
+   double ticksPerPoint = tickSize/_Point;
+   double pointValue = tickValue/ticksPerPoint;
+   return (pointValue);
+}
+
 void OnTimer() {}
 
 void OnTrade() {}
-
