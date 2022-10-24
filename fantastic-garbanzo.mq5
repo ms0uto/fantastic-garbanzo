@@ -15,12 +15,14 @@ input int      RsiPeriod=14;
 input int      RsiTopLevel=80;
 input int      RsiBottomLevel=20;
 input double   DailyLoss=0.5;
-input int      MaxSlippage=5;
+input int      MaxSlippage=10;
 
 // rsi handler
 int rsi_handler;
 // rsi array
 double rsi[];
+// init candle tracking
+int prev_num_candles = 0;
 
 // TODO Use double or enum for 24hr value (to limit EA operating times)
 // input datetime StartTime= 
@@ -54,31 +56,38 @@ int OnInit() {
 void OnTick() {
 
    CopyBuffer(rsi_handler, 0, 1, 3, rsi);
-
-   if(rsi[0] > RsiBottomLevel && rsi[1] <= RsiBottomLevel && OrdersTotal() < 1) {
-      // TODO extract buy function
-      // TODO test and profile OrderOpen() VS Buy() for execution time.
-      // TODO does including Trade.mqh affect performance, does tree shaking exist on includes? 
-      // TODO use % SL and TP from input parameters.
-      // TODO move out as much calculations as possible from OnTick().
-      int    digits = (int) SymbolInfoInteger(_Symbol, SYMBOL_DIGITS); // amount of digits (3 as in 1.000)
-      double point = SymbolInfoDouble(_Symbol, SYMBOL_POINT);          // point value (1 as in 1.000)
-      double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);              // current price for closing long.
-      double sl = (bid - 1000 * point) / 2;                            // unnormalized stop loss value.
-      sl = NormalizeDouble(sl, digits);                                // normalizing stop loss.
-      double tp = bid + 1000 * point;                                  // unnormalized take profit value.
-      tp = NormalizeDouble(tp, digits);                                // normalizing take profit.
-      
-      double price = SymbolInfoDouble(_Symbol, SYMBOL_ASK); // For long position.
-      
-      trade.Buy(Lots, _Symbol, price, sl, tp, "");
+   
+   int num_candles = Bars(_Symbol, _Period);
+   
+   if(num_candles > prev_num_candles) {
+      if(rsi[0] > RsiBottomLevel && rsi[1] <= RsiBottomLevel && PositionsTotal() < 1) {
+         // TODO extract buy function
+         // TODO test and profile OrderOpen() VS Buy() for execution time.
+         // TODO does including Trade.mqh affect performance, does tree shaking exist on includes? 
+         // TODO use % SL and TP from input parameters.
+         // TODO move out as much calculations as possible from OnTick().
+       
+         double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK); // For long position.
+         double sl = ask - 100 * _Point;
+         double tp = ask + 100 * _Point;
+         
+         trade.Buy(Lots, _Symbol, ask, sl, tp, NULL);
+         
       }
-  }
-
-void OnTimer() {
+      
+      if(rsi[0] < RsiTopLevel && rsi[1] >= RsiTopLevel && PositionsTotal() < 1) {
    
-  }
+         double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID); // For short position.
+         double sl = bid + 100 * _Point;
+         double tp = bid - 100 * _Point;
+         
+         trade.Sell(Lots, _Symbol, bid, sl, tp, NULL);
+      }
+      prev_num_candles = num_candles;
+   }
+}
 
-void OnTrade() {
-   
-  }
+void OnTimer() {}
+
+void OnTrade() {}
+
