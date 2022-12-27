@@ -15,7 +15,7 @@ input int      RsiTopLevel=80;
 input int      RsiBottomLevel=20;
 input double   MaxDailyDrawdown=2.0;
 input int      MaxSlippage=10;
-input int      MaxOpenPositions=1;
+input int      MaxOpenPositions=20;
 
 // rsi handler
 int rsi_handler;
@@ -24,36 +24,23 @@ double rsi[];
 // init candle tracking
 int prev_num_candles = 0;
 // init tracking for maximum daily drawdown
-datetime newday;
-MqlDateTime dt;
+int barsTotal = 0;
 // init max allowed equity
-double allowed_equity;
+double allowed_drawdown;
 // control flag
 bool dailyDrawDownReached;
 
-// TODO Use double or enum for 24hr value (to limit EA operating times)
-// input datetime StartTime= 
-// input datetime FinishTime=
 
 int OnInit() {
-
    Print("Starting fantastic-garbanzo EA on server ", account.Server());
    Print("Balance=", account.Balance()," Profit=", account.Profit()," Equity=", account.Equity());   
    Print("Point value=", PointValue());
-   
-   // Allow executing only on demo accounts for now.
-   //if(account.TradeMode() == ACCOUNT_TRADE_MODE_REAL) {
-   //   Alert("This is not production ready, detected real account, exiting.");
-   //   return(INIT_FAILED);
-   //  }
-   
    // set global MagicNumber to isolate current EA orders.
    trade.SetExpertMagicNumber(1337);
    // set global allowed slippage in points when buying/selling TODO test with different values.
    trade.SetDeviationInPoints(MaxSlippage);
    // TODO needs testing, blocking might be good if we only allow one trade at a time.
    trade.SetAsyncMode(false);
-   
    // Init RSI handling
    rsi_handler = iRSI(_Symbol, _Period, RsiPeriod, PRICE_CLOSE);
    ArraySetAsSeries(rsi, true);
@@ -62,38 +49,41 @@ int OnInit() {
   }
 
 void OnTick() {
-
-   TimeToStruct(iTime(_Symbol, _Period, 0), dt);
-   int current_day = dt.day;
-   TimeToStruct(newday, dt);
-   int new_day = dt.day;
-   
-   // Check for next day to set daily drawdawn. (inits first day)
-   if(current_day != new_day) {
-      newday = iTime(_Symbol, _Period, 0);
-      allowed_equity = NormalizeDouble(account.Equity() - (account.Equity() * MaxDailyDrawdown/100), 1);
-      Print("Equity=", account.Equity(), " MaxDailyDrawdown=", MaxDailyDrawdown, "% (minimum equity=", allowed_equity,")");
+   // Check for new day and calculate new daily drawdown
+   int bars = iBars(_Symbol, PERIOD_D1); 
+   if(barsTotal != bars){
+      barsTotal = bars;
+      // Caculate drawdown based on minimum value
+      if(account.Equity() < account.Balance()) {
+         allowed_drawdown = NormalizeDouble(account.Equity() - (account.Equity() * MaxDailyDrawdown/100), 1);
+      } else {
+         allowed_drawdown = NormalizeDouble(account.Balance() - (account.Balance() * MaxDailyDrawdown/100), 1);
+      }
+      Print("Equity=", account.Equity(), " MaxDailyDrawdown=", MaxDailyDrawdown, "% (actual allowed drawdown=", allowed_drawdown,")");
       dailyDrawDownReached = false;
    }
    
-   // Close all positions as soon as account equity < allowed equity
-   if(account.Equity() <= allowed_equity && !dailyDrawDownReached){
+   // Close all positions as soon as account equity <= allowed equity
+   if(account.Equity() <= allowed_drawdown && !dailyDrawDownReached){
       dailyDrawDownReached = true;
-      Print("Closing positions on ", _Symbol, " current equity=", account.Equity(), " minimum equity=", allowed_equity);
+      Print("Closing positions on ", _Symbol, " current equity=", account.Equity(), " allowed drawdown=", allowed_drawdown);
       for(int i=0; i < PositionsTotal(); i++) { 
          trade.PositionClose(PositionGetTicket(i));
       }
    }
    
+   // Keep updating rsi values to buffer
    CopyBuffer(rsi_handler, 0, 1, 3, rsi);
    
-   int num_candles = Bars(_Symbol, _Period);
-   
+   int num_candles = iBars(_Symbol, _Period);
+   // Look for an entry on a new candle if max drawdown not reached
    if(num_candles > prev_num_candles && !dailyDrawDownReached) {
    
       if(rsi[0] > RsiBottomLevel && rsi[1] <= RsiBottomLevel && PositionsTotal() < MaxOpenPositions) {
          double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK); // For long position.
          double sl = ask - (CalculateStopLossPoints() * _Point);
+         
+         
          double tp = ask + (CalculateTakeProfitPoints() * _Point);
          trade.Buy(Lots, _Symbol, ask, sl, tp, NULL);
       }
@@ -126,8 +116,8 @@ double CalculateTakeProfitPoints() {
    return (takeProfitPoints);
 }
 
-// Calculate the value in base currency of 1 point move in price with 1 lot.
 double PointValue() {
+   // Calculate the value in base currency of 1 point move in price with 1 lot.
    double tickSize = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
    double tickValue = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
    double ticksPerPoint = tickSize/_Point;
@@ -138,3 +128,4 @@ double PointValue() {
 void OnTimer() {}
 
 void OnTrade() {}
+
