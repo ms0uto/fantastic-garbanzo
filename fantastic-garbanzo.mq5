@@ -26,7 +26,7 @@ int prev_num_candles = 0;
 // init tracking for maximum daily drawdown
 int barsTotal = 0;
 // init max allowed equity
-double allowed_equity;
+double allowed_drawdown;
 // control flag
 bool dailyDrawDownReached;
 
@@ -53,15 +53,20 @@ void OnTick() {
    int bars = iBars(_Symbol, PERIOD_D1); 
    if(barsTotal != bars){
       barsTotal = bars;
-      allowed_equity = NormalizeDouble(account.Equity() - (account.Equity() * MaxDailyDrawdown/100), 1);
-      Print("Equity=", account.Equity(), " MaxDailyDrawdown=", MaxDailyDrawdown, "% (minimum equity=", allowed_equity,")");
+      // Caculate drawdown based on minimum value
+      if(account.Equity() < account.Balance()) {
+         allowed_drawdown = NormalizeDouble(account.Equity() - (account.Equity() * MaxDailyDrawdown/100), 1);
+      } else {
+         allowed_drawdown = NormalizeDouble(account.Balance() - (account.Balance() * MaxDailyDrawdown/100), 1);
+      }
+      Print("Equity=", account.Equity(), " MaxDailyDrawdown=", MaxDailyDrawdown, "% (actual allowed drawdown=", allowed_drawdown,")");
       dailyDrawDownReached = false;
    }
    
    // Close all positions as soon as account equity <= allowed equity
-   if(account.Equity() <= allowed_equity && !dailyDrawDownReached){
+   if(account.Equity() <= allowed_drawdown && !dailyDrawDownReached){
       dailyDrawDownReached = true;
-      Print("Closing positions on ", _Symbol, " current equity=", account.Equity(), " minimum equity=", allowed_equity);
+      Print("Closing positions on ", _Symbol, " current equity=", account.Equity(), " allowed drawdown=", allowed_drawdown);
       for(int i=0; i < PositionsTotal(); i++) { 
          trade.PositionClose(PositionGetTicket(i));
       }
@@ -77,6 +82,8 @@ void OnTick() {
       if(rsi[0] > RsiBottomLevel && rsi[1] <= RsiBottomLevel && PositionsTotal() < MaxOpenPositions) {
          double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK); // For long position.
          double sl = ask - (CalculateStopLossPoints() * _Point);
+         
+         
          double tp = ask + (CalculateTakeProfitPoints() * _Point);
          trade.Buy(Lots, _Symbol, ask, sl, tp, NULL);
       }
