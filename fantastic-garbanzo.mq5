@@ -9,11 +9,11 @@ CAccountInfo   account;
 
 input double   StopLoss=1.0;
 input double   TakeProfit=1.0;
-input double   Lots=0.2;
+input double   Lots=2.0;
 input int      RsiPeriod=14;
 input int      RsiTopLevel=80;
 input int      RsiBottomLevel=20;
-input double   MaxDailyDrawdown=2.0;
+input double   MaxDailyDrawdown=3.0;
 input int      MaxSlippage=10;
 input int      MaxOpenPositions=20;
 
@@ -29,6 +29,8 @@ int barsTotal = 0;
 double allowed_drawdown;
 // control flag
 bool dailyDrawDownReached;
+// magic number
+const int MAGIC_NUMBER = 1337;
 
 
 int OnInit() {
@@ -36,7 +38,7 @@ int OnInit() {
    Print("Balance=", account.Balance()," Profit=", account.Profit()," Equity=", account.Equity());   
    Print("Point value=", PointValue());
    // set global MagicNumber to isolate current EA orders.
-   trade.SetExpertMagicNumber(1337);
+   trade.SetExpertMagicNumber(MAGIC_NUMBER);
    // set global allowed slippage in points when buying/selling TODO test with different values.
    trade.SetDeviationInPoints(MaxSlippage);
    // TODO needs testing, blocking might be good if we only allow one trade at a time.
@@ -63,12 +65,16 @@ void OnTick() {
       dailyDrawDownReached = false;
    }
    
-   // Close all positions as soon as account equity <= allowed equity
+   // Close all positions as soon as account equity <= allowed drawdown
    if(account.Equity() <= allowed_drawdown && !dailyDrawDownReached){
       dailyDrawDownReached = true;
       Print("Closing positions on ", _Symbol, " current equity=", account.Equity(), " allowed drawdown=", allowed_drawdown);
-      for(int i=0; i < PositionsTotal(); i++) { 
-         trade.PositionClose(PositionGetTicket(i));
+      for(int i=0; i < PositionsTotal(); i++) {
+         PositionSelectByTicket(PositionGetTicket(i));
+         // Only close positions opened by the EA
+         if (PositionGetInteger(POSITION_MAGIC) == MAGIC_NUMBER){
+            trade.PositionClose(PositionGetTicket(i));
+         }
       }
    }
    
@@ -82,8 +88,6 @@ void OnTick() {
       if(rsi[0] > RsiBottomLevel && rsi[1] <= RsiBottomLevel && PositionsTotal() < MaxOpenPositions) {
          double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK); // For long position.
          double sl = ask - (CalculateStopLossPoints() * _Point);
-         
-         
          double tp = ask + (CalculateTakeProfitPoints() * _Point);
          trade.Buy(Lots, _Symbol, ask, sl, tp, NULL);
       }
